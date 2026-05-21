@@ -7,16 +7,17 @@ import google.generativeai as genai
 # ---- CONFIGURATION ----
 # Token aur Key yahan direct dal sakte hain ya Server settings me environment variable bana sakte hain
 TELEGRAM_TOKEN = "8683419082:AAH-7xsJbiz_ipiuut1B-H8tWJgvZv6IP6g"
-GEMINI_API_KEY = "AIzaSyCBLHf6D5o3BBwoalhfF4sNIoC9z50D9cg"
+
+import os
+API_KEY = os.environ.get("GEMINI_API_KEY")
 
 # Initialize Bot and Dispatcher
 bot = Bot(token=TELEGRAM_TOKEN)
 dp = Dispatcher()
 
 # Configure Gemini AI
-genai.configure(api_key=GEMINI_API_KEY)
+genai.configure(api_key=API_KEY)
 model = genai.GenerativeModel("gemini-2.5-flash")
-
 # ---- BOT COMMANDS ----
 @dp.message(Command("start"))
 async def start_cmd(message: types.Message):
