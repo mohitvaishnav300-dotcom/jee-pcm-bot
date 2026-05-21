@@ -15,7 +15,7 @@ dp = Dispatcher()
 
 # Configure Gemini AI
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash')
+model = genai.GenerativeModel("gemini-2.5-flash")
 
 # ---- BOT COMMANDS ----
 @dp.message(Command("start"))
