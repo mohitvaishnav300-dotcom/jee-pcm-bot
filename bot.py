@@ -1,106 +1,108 @@
-import os
 import asyncio
+import io
+import google.generativeai as genai
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
-import google.generativeai as genai
+from aiogram.types import Message
+from sympy import sympify, solve
+from PIL import Image, ImageDraw, ImageFont
+import pytesseract
 
-# ---- कॉन्फ़िगरेशन ----
-TELEGRAM_TOKEN = "8683419082:AAH-7xsJbiz_ipiuut1B-H8tWJgvZv6IP6g"   # अपना BotFather टोकन डालें
-API_KEY = os.environ.get("GEMINI_API_KEY")   # Render/GitHub में GEMINI_API_KEY सेट करें
+# 🔑 Replace with your own keys
+TELEGRAM_TOKEN = "8683419082:AAH-7xsJbiz_ipiuut1B-H8tWJgvZv6IP6g"
+GEMINI_API_KEY = "YOUR_GEMINI_API_KEY"
 
-# Bot और Dispatcher शुरू करें
+# Configure Gemini
+genai.configure(api_key=GEMINI_API_KEY)
+
+# Initialize Telegram bot
 bot = Bot(token=TELEGRAM_TOKEN)
 dp = Dispatcher()
 
-# Gemini AI कॉन्फ़िगर करें
-genai.configure(api_key=API_KEY)
-model = genai.GenerativeModel("gemini-2.5-flash")
+# Function: Solve math expression
+def solve_math(expression):
+    try:
+        expr = sympify(expression)
+        solution = solve(expr)
+        return f"Math Answer: {solution}"
+    except Exception:
+        return None
 
-# 🧠 साधारण मेमोरी: पिछले 3 सवाल याद रखेगा
-user_text_history = {}
+# Function: Generate AI response
+def ai_response(prompt):
+    try:
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        return f"AI Error: {e}"
 
-# 🚀 START कमांड
+# Function: Generate answer image
+def generate_image(answer_text):
+    img = Image.new("RGB", (600, 300), color="white")
+    draw = ImageDraw.Draw(img)
+    font = ImageFont.load_default()
+    draw.text((20, 120), answer_text, fill="black", font=font)
+
+    output = io.BytesIO()
+    img.save(output, format="PNG")
+    output.seek(0)
+    return output
+
+# Function: OCR for photo questions
+def extract_text_from_photo(photo_path):
+    try:
+        text = pytesseract.image_to_string(Image.open(photo_path))
+        return text.strip()
+    except Exception as e:
+        return f"OCR Error: {e}"
+
+# Start command
 @dp.message(Command("start"))
-async def start_command(message: types.Message):
-    user_id = message.from_user.id
-    user_text_history[user_id] = []
-    await message.reply("👋 नमस्ते! मैं आपका Class 11 PCM Tutor Bot हूँ। Physics, Chemistry, Math के JEE सवाल भेजिए, मैं स्टेप‑बाय‑स्टेप हल दूँगा।")
+async def start_handler(message: Message):
+    await message.answer("Hello 👋, I am your AI Study Bot!\nSend me a math problem, study question, or even a photo.")
 
-# 📸 फोटो हैंडल करना
-@dp.message(lambda message: message.photo)
-async def handle_photo(message: types.Message):
-    wait_message = await message.reply("🔄 फोटो मिल गई है! हल तैयार हो रहा है, कृपया थोड़ा इंतज़ार करें...")
-    try:
-        photo = message.photo[-1]
-        file_info = await bot.get_file(photo.file_id)
-        file_path = file_info.file_path
-        file_bytes = await bot.download_file(file_path)
-        image_data = file_bytes.read()
+# Text handler
+@dp.message(lambda msg: msg.text)
+async def text_handler(message: Message):
+    user_text = message.text.strip()
 
-        # Tutor स्टाइल प्रॉम्प्ट
-        response = model.generate_content([
-            {"mime_type": "image/jpeg", "data": image_data},
-            """आप एक प्रोफेशनल JEE PCM Tutor हैं।
-            - केवल Class 11 Physics, Chemistry और Math के सवाल हल करें।
-            - स्टेप‑बाय‑स्टेप हल दीजिए।
-            - हिंदी‑English मिक्स भाषा में समझाइए।
-            - हर स्टेप में फ़ॉर्मूला और कारण बताइए।
-            - अंतिम उत्तर को साफ़ तरीके से अलग दिखाइए।
-            """
-        ])
-        
-        if response.text:
-            await bot.edit_message_text(response.text, message.chat.id, wait_message.message_id)
-        else:
-            await bot.edit_message_text("❌ माफ़ कीजिए, AI कोई हल नहीं बना पाया।", message.chat.id, wait_message.message_id)
-    except Exception as e:
-        print(f"Error: {e}")
-        await bot.edit_message_text("❌ फोटो प्रोसेस करने में समस्या हुई, कृपया दोबारा कोशिश करें।", message.chat.id, wait_message.message_id)
+    # Try math solver first
+    math_answer = solve_math(user_text)
+    if math_answer:
+        answer_text = math_answer
+    else:
+        # If not math, use AI
+        answer_text = ai_response(user_text)
 
-# 💬 टेक्स्ट हैंडल करना
-@dp.message(lambda message: message.text and not message.text.startswith('/'))
-async def handle_text(message: types.Message):
-    user_id = message.from_user.id
-    user_input = message.text.lower()
+    # Send image answer
+    img = generate_image(answer_text)
+    await message.answer_photo(img)
 
-    # अगर यूज़र casual greeting करे
-    if user_input in ["hi", "hii", "hyy", "hello", "hey", "namaste"]:
-        await message.reply("👋 नमस्ते! मैं आपका JEE Class 11 PCM Tutor हूँ. "
-                            "मैं आपकी तैयारी में किस तरह मदद कर सकता हूँ?")
-        return
+# Photo handler
+@dp.message(lambda msg: msg.photo)
+async def photo_handler(message: Message):
+    photo = message.photo[-1]
+    photo_path = f"photo_{message.message_id}.jpg"
+    await photo.download(destination_file=photo_path)
 
-    wait_message = await message.reply("🔄 आपका सवाल मिल गया है! सोच रहा हूँ...")
+    # OCR extract
+    extracted_text = extract_text_from_photo(photo_path)
 
-    try:
-        if user_id not in user_text_history:
-            user_text_history[user_id] = []
-            
-        current_prompt = message.text
-        full_context = """आप एक प्रोफेशनल JEE PCM Tutor हैं।
-        - केवल Class 11 Physics, Chemistry और Math के सवाल हल करें।
-        - स्टेप‑बाय‑स्टेप हल दीजिए।
-        - हिंदी‑English मिक्स भाषा में समझाइए।
-        - हर स्टेप में फ़ॉर्मूला और कारण बताइए।
-        - अंतिम उत्तर को साफ़ तरीके से अलग दिखाइए।
-        """
-        for past_text in user_text_history[user_id][-3:]:
-            full_context += f"\nपहले पूछा गया सवाल: {past_text}"
-        full_context += f"\nअब हल करें: {current_prompt}"
+    # Try math solver
+    math_answer = solve_math(extracted_text)
+    if math_answer:
+        answer_text = math_answer
+    else:
+        answer_text = ai_response(extracted_text)
 
-        response = model.generate_content(full_context)
+    # Send image answer
+    img = generate_image(answer_text)
+    await message.answer_photo(img)
 
-        if response.text:
-            user_text_history[user_id].append(current_prompt)
-            await bot.edit_message_text(response.text, message.chat.id, wait_message.message_id)
-        else:
-            await bot.edit_message_text("❌ माफ़ कीजिए, मैं इसका हल नहीं ढूँढ पाया।", message.chat.id, wait_message.message_id)
-    except Exception as e:
-        print(f"Error: {e}")
-        await bot.edit_message_text("❌ सवाल का हल निकालने में तकनीकी समस्या हुई।", message.chat.id, wait_message.message_id)
-
-# MAIN FUNCTION
+# Main entry
 async def main():
-    print("Bot चालू हो रहा है (Class 11 PCM Tutor)...")
+    print("🤖 Extended Bot with OCR + Multi-subject is running...")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
